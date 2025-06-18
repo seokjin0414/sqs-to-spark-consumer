@@ -19,7 +19,7 @@ def handle_message(msg):
     receipt_handle = msg["ReceiptHandle"]
     try:
         body = json.loads(msg["Body"])
-        spark_insert(body, spark_session=spark_session)
+        spark_insert(body, spark_session)
 
         sqs.delete_message(QueueUrl=sqs_url, ReceiptHandle=receipt_handle)
         print("[DEBUG] SQS 메시지 삭제 완료")

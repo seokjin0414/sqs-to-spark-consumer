@@ -25,7 +25,7 @@ def get_spark_session():
 
 logger = logging.getLogger(__name__)
 
-def spark_insert(context, spark_session):
+def spark_insert(context, spark_session: SparkSession):
     building_id: Optional[str] = None
     sensor_type: Optional[str] = None
     try:
@@ -35,6 +35,7 @@ def spark_insert(context, spark_session):
             body = context
         else:
             raise SparkInsertError("context must be str or dict")
+        print(f"##### body: {body} #####")
 
         sensor_type = body.get("sensor_type")
         building_id = body.get("building_id")
