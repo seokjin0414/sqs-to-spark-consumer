@@ -10,18 +10,24 @@ import logging
 
 from sensor_schema import get_schema, get_table_name
 
-
 class SparkInsertError(Exception):
     """Custom Exception for spark_insert errors."""
     pass
 
+def get_spark_session():
+    load_dotenv()
+    spark_connect = os.getenv("SPARK_CONNECT")
+    if not spark_connect:
+        raise RuntimeError("SPARK_CONNECT ENV not set")
+
+    spark_session = SparkSession.builder.remote(spark_connect).getOrCreate()
+    return spark_session
+
 logger = logging.getLogger(__name__)
 
-def spark_insert(context):
-    spark: Optional[SparkSession] = None
+def spark_insert(context, spark_session):
     building_id: Optional[str] = None
     sensor_type: Optional[str] = None
-
     try:
         if isinstance(context, str):
             body: Dict = json.loads(context)
@@ -38,41 +44,30 @@ def spark_insert(context):
             raise SparkInsertError(f"Missing field: type/building_id/data [building_id:{building_id}] [type:{sensor_type}]")
 
         schema: StructType = get_schema(sensor_type)
-
-        load_dotenv()
-        spark_connect: Optional[str] = os.getenv("SPARK_CONNECT")
-        if not spark_connect:
-            raise SparkInsertError(f"SPARK_CONNECT ENV not set [building_id:{building_id}] [type:{sensor_type}]")
-
-        spark = SparkSession.builder.remote(spark_connect).getOrCreate()
-
-        df: DataFrame = spark.createDataFrame(data, schema=schema)
+        df: DataFrame = spark_session.createDataFrame(data, schema=schema)
         df = df.withColumn("recorded_at", functions.to_timestamp("recorded_at"))
+        print(f"##### df: {df} #####")
 
         table_name = get_table_name(sensor_type)
         df.write.format("iceberg").mode("append").save(table_name)
         print(f"##### Spark Insert End [building_id:{building_id}] [type:{sensor_type}] #####")
-        return True
 
     except json.JSONDecodeError as e:
+        print(f"[INPUT ERROR][building_id:{building_id}][type:{sensor_type}] wrong JSON: {e}")
         logger.error(f"[INPUT ERROR][building_id:{building_id}][type:{sensor_type}] wrong JSON: {e}")
         raise
 
     except AnalysisException as e:
+        print(f"[SPARK ANALYSIS ERROR][building_id:{building_id}][type:{sensor_type}] {e}")
         logger.error(f"[SPARK ANALYSIS ERROR][building_id:{building_id}][type:{sensor_type}] {e}")
         raise
 
     except SparkInsertError as e:
+        print(f"[USAGE ERROR][building_id:{building_id}][type:{sensor_type}] {e}")
         logger.error(f"[USAGE ERROR][building_id:{building_id}][type:{sensor_type}] {e}")
         raise
 
     except Exception as e:
+        print(f"[UNEXPECTED ERROR][building_id:{building_id}][type:{sensor_type}]: {e}")
         logger.error(f"[UNEXPECTED ERROR][building_id:{building_id}][type:{sensor_type}] {e.__class__.__name__}: {e}")
         raise
-
-    finally:
-        if spark is not None:
-            try:
-                spark.stop()
-            except Exception as e:
-                logger.error(f"[SPARK STOP ERROR][building_id:{building_id}][type:{sensor_type}] {e}")

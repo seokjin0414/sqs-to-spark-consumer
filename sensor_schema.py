@@ -4,6 +4,7 @@ from enum import Enum
 from pydantic import BaseModel
 from pyspark.sql.types import StructType, StructField, StringType, DoubleType
 import os
+import logging
 
 class SensorType(str, Enum):
     GEMS = "gems"
@@ -70,9 +71,12 @@ SENSOR_TABLE_MAPPING = {
     "test": os.getenv("ICEBERG_TABLE_TEST"),
 }
 
+logger = logging.getLogger(__name__)
 def get_table_name(sensor_type: str) -> str:
     table = SENSOR_TABLE_MAPPING.get(sensor_type)
+    print(f"table: {table}")
     if not table:
+        logger.error(f"Unknown or unset sensor_type: {sensor_type}")
         raise ValueError(f"Unknown or unset sensor_type: {sensor_type}")
     return table
 
@@ -142,4 +146,5 @@ def get_schema(sensor_type):
             StructField("recorded_at", StringType(), False),
         ])
 
+    logger.error(f"Unknown sensor type: {sensor_type}")
     raise ValueError(f"Unknown sensor type: {sensor_type}")
