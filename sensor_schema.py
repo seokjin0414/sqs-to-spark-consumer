@@ -74,7 +74,7 @@ SENSOR_TABLE_MAPPING = {
 logger = logging.getLogger(__name__)
 def get_table_name(sensor_type: str) -> str:
     table = SENSOR_TABLE_MAPPING.get(sensor_type)
-    print(f"table: {table}")
+
     if not table:
         logger.error(f"Unknown or unset sensor_type: {sensor_type}")
         raise ValueError(f"Unknown or unset sensor_type: {sensor_type}")
