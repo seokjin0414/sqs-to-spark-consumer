@@ -22,9 +22,7 @@ def handle_message(msg):
         spark_insert(body, spark_session)
 
         sqs.delete_message(QueueUrl=sqs_url, ReceiptHandle=receipt_handle)
-        print("[DEBUG] SQS 메시지 삭제 완료")
     except Exception as e:
-        print(f"Error handling message: {e}")
         logger.error(f"Error handling message: {e}", exc_info=True)
 
 def consume_sqs():

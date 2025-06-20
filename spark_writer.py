@@ -35,7 +35,6 @@ def spark_insert(context, spark_session: SparkSession):
             body = context
         else:
             raise SparkInsertError("context must be str or dict")
-        print(f"##### body: {body} #####")
 
         sensor_type = body.get("sensor_type")
         building_id = body.get("building_id")
@@ -47,28 +46,23 @@ def spark_insert(context, spark_session: SparkSession):
         schema: StructType = get_schema(sensor_type)
         df: DataFrame = spark_session.createDataFrame(data, schema=schema)
         df = df.withColumn("recorded_at", functions.to_timestamp("recorded_at"))
-        print(f"##### df: {df} #####")
 
         table_name = get_table_name(sensor_type)
         df.write.format("iceberg").mode("append").save(table_name)
         print(f"##### Spark Insert End [building_id:{building_id}] [type:{sensor_type}] #####")
 
     except json.JSONDecodeError as e:
-        print(f"[INPUT ERROR][building_id:{building_id}][type:{sensor_type}] wrong JSON: {e}")
         logger.error(f"[INPUT ERROR][building_id:{building_id}][type:{sensor_type}] wrong JSON: {e}")
         raise
 
     except AnalysisException as e:
-        print(f"[SPARK ANALYSIS ERROR][building_id:{building_id}][type:{sensor_type}] {e}")
         logger.error(f"[SPARK ANALYSIS ERROR][building_id:{building_id}][type:{sensor_type}] {e}")
         raise
 
     except SparkInsertError as e:
-        print(f"[USAGE ERROR][building_id:{building_id}][type:{sensor_type}] {e}")
         logger.error(f"[USAGE ERROR][building_id:{building_id}][type:{sensor_type}] {e}")
         raise
 
     except Exception as e:
-        print(f"[UNEXPECTED ERROR][building_id:{building_id}][type:{sensor_type}]: {e}")
         logger.error(f"[UNEXPECTED ERROR][building_id:{building_id}][type:{sensor_type}] {e.__class__.__name__}: {e}")
         raise
