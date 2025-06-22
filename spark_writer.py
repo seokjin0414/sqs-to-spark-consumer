@@ -4,11 +4,12 @@ from pyspark.sql.types import StructType
 from pyspark.sql.utils import AnalysisException
 from pyspark.sql import functions
 from typing import Optional, Dict
+
+from sensor_schema import get_schema, get_table_name
+
 import json
 import os
 import logging
-
-from sensor_schema import get_schema, get_table_name
 
 class SparkInsertError(Exception):
     """Custom Exception for spark_insert errors."""

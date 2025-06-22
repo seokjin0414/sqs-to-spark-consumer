@@ -1,11 +1,14 @@
+from collections import defaultdict
 from dotenv import load_dotenv
+
+from sensor_schema import SensorType
+from spark_writer import get_spark_session, spark_insert
+
 import boto3
 import json
 import time
 import os
 import logging
-
-from spark_writer import  get_spark_session, spark_insert
 
 load_dotenv()
 region = os.getenv("AWS_DEFAULT_REGION")
@@ -14,6 +17,18 @@ sqs = boto3.client("sqs", region_name=region)
 
 spark_session = get_spark_session()
 logger = logging.getLogger(__name__)
+
+def group_by_sensor_type(messages):
+    grouped = defaultdict(list)
+    for msg in messages:
+        body = json.loads(msg["Body"])
+        try:
+            sensor_type = SensorType(body["sensor_type"])
+        except ValueError:
+            logger.error(f"Unknown sensor_type: {body.get('sensor_type')}")
+            continue
+        grouped[sensor_type].append((msg, body))
+    return grouped
 
 def handle_message(msg):
     receipt_handle = msg["ReceiptHandle"]
