@@ -5,7 +5,7 @@ from pyspark.sql.utils import AnalysisException
 from pyspark.sql import functions
 from typing import Optional, Dict
 
-from sensor_schema import get_schema, get_table_name
+from sensor_schema import get_schema, get_table_name, SensorType
 
 import json
 import os
@@ -50,7 +50,7 @@ def spark_insert(context, spark_session: SparkSession):
 
         table_name = get_table_name(sensor_type)
         df.write.format("iceberg").mode("append").save(table_name)
-        print(f"##### Spark Insert End [building_id:{building_id}] [type:{sensor_type}] #####")
+        logger.info(f"[SUCCESS Spark Insert][building_id:{building_id}][type:{sensor_type}]")
 
     except json.JSONDecodeError as e:
         logger.error(f"[INPUT ERROR][building_id:{building_id}][type:{sensor_type}] wrong JSON: {e}")
@@ -66,4 +66,33 @@ def spark_insert(context, spark_session: SparkSession):
 
     except Exception as e:
         logger.error(f"[UNEXPECTED ERROR][building_id:{building_id}][type:{sensor_type}] {e.__class__.__name__}: {e}")
+        raise
+
+def batch_insert(sensor_type, data_list: list, spark_session: SparkSession):
+    if not data_list:
+        return
+
+    try:
+        schema = get_schema(sensor_type)
+        df = spark_session.createDataFrame(data_list, schema=schema)
+        df = df.withColumn("recorded_at", functions.to_timestamp("recorded_at"))
+
+        table_name = get_table_name(sensor_type)
+        df.write.format("iceberg").mode("append").save(table_name)
+        logger.info(f"[SUCCESS Spark Batch Insert][type:{sensor_type}] [row_count:{df.count()}]")
+
+    except json.JSONDecodeError as e:
+        logger.error(f"[INPUT ERROR][type:{sensor_type}] wrong JSON: {e}")
+        raise
+
+    except AnalysisException as e:
+        logger.error(f"[SPARK ANALYSIS ERROR][type:{sensor_type}] {e}")
+        raise
+
+    except SparkInsertError as e:
+        logger.error(f"[USAGE ERROR][type:{sensor_type}] {e}")
+        raise
+
+    except Exception as e:
+        logger.error(f"[UNEXPECTED ERROR][type:{sensor_type}] {e.__class__.__name__}: {e}")
         raise
