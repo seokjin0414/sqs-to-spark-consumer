@@ -2,7 +2,7 @@ from collections import defaultdict
 from dotenv import load_dotenv
 
 from sensor_schema import SensorType
-from spark_writer import get_spark_session, spark_insert
+from spark_writer import get_spark_session, batch_insert
 
 import boto3
 import json
@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 def group_by_sensor_type(messages):
     grouped = defaultdict(list)
+
     for msg in messages:
         body = json.loads(msg["Body"])
         try:
@@ -30,15 +31,24 @@ def group_by_sensor_type(messages):
         grouped[sensor_type].append((msg, body))
     return grouped
 
-def handle_message(msg):
-    receipt_handle = msg["ReceiptHandle"]
-    try:
-        body = json.loads(msg["Body"])
-        spark_insert(body, spark_session)
+def delete_messages_batch(sqs, sqs_url, batch):
+    entries = [
+        {"Id": str(idx), "ReceiptHandle": msg["ReceiptHandle"]}
+        for idx, (msg, _) in enumerate(batch)
+    ]
+    if entries:
+        sqs.delete_message_batch(QueueUrl=sqs_url, Entries=entries)
 
-        sqs.delete_message(QueueUrl=sqs_url, ReceiptHandle=receipt_handle)
-    except Exception as e:
-        logger.error(f"Error handling message: {e}", exc_info=True)
+def process_sensor_type_batch(sensor_type, batch, spark_session, sqs, sqs_url):
+    data_list = []
+    for _, body in batch:
+        if isinstance(body["data"], list):
+            data_list.extend(body["data"])
+        else:
+            data_list.append(body["data"])
+
+    batch_insert(sensor_type, data_list, spark_session)
+    delete_messages_batch(sqs, sqs_url, batch)
 
 def consume_sqs():
     while True:
@@ -50,12 +60,17 @@ def consume_sqs():
         messages = resp.get("Messages", [])
 
         if not messages:
-            print("No message. Wait...")
+            logger.info("No message. Wait...")
             time.sleep(5)
             continue
 
-        for msg in messages:
-            handle_message(msg)
+        data_dict = group_by_sensor_type(messages)
+
+        for sensor_type, batch in data_dict.items():
+            try:
+                process_sensor_type_batch(sensor_type, batch, spark_session, sqs, sqs_url)
+            except Exception as e:
+                logger.error(f"Batch insert or delete failed for {sensor_type}: {e}")
 
 if __name__ == "__main__":
     try:
