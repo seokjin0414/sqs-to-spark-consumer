@@ -1,5 +1,6 @@
 from collections import defaultdict
 from dotenv import load_dotenv
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from sensor_schema import SensorType
 from spark_writer import get_spark_session, batch_insert
@@ -18,6 +19,7 @@ sqs = boto3.client("sqs", region_name=region)
 spark_session = get_spark_session()
 logger = logging.getLogger(__name__)
 
+
 def group_by_sensor_type(messages):
     grouped = defaultdict(list)
 
@@ -31,6 +33,7 @@ def group_by_sensor_type(messages):
         grouped[sensor_type].append((msg, body))
     return grouped
 
+
 def delete_messages_batch(sqs, sqs_url, batch):
     entries = [
         {"Id": str(idx), "ReceiptHandle": msg["ReceiptHandle"]}
@@ -38,6 +41,7 @@ def delete_messages_batch(sqs, sqs_url, batch):
     ]
     if entries:
         sqs.delete_message_batch(QueueUrl=sqs_url, Entries=entries)
+
 
 def process_sensor_type_batch(sensor_type, batch, spark_session, sqs, sqs_url):
     data_list = []
@@ -49,28 +53,37 @@ def process_sensor_type_batch(sensor_type, batch, spark_session, sqs, sqs_url):
 
     batch_insert(sensor_type, data_list, spark_session)
     delete_messages_batch(sqs, sqs_url, batch)
+    print(f"#Done: {sensor_type}")
 
 def consume_sqs():
-    while True:
-        resp = sqs.receive_message(
-            QueueUrl=sqs_url,
-            MaxNumberOfMessages=10,
-            WaitTimeSeconds=10,
-        )
-        messages = resp.get("Messages", [])
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        while True:
+            resp = sqs.receive_message(
+                QueueUrl=sqs_url,
+                MaxNumberOfMessages=10,
+                WaitTimeSeconds=10,
+            )
+            messages = resp.get("Messages", [])
 
-        if not messages:
-            logger.info("No message. Wait...")
-            time.sleep(5)
-            continue
+            if not messages:
+                logger.info("No message. Wait...")
+                print("No message. Wait...")
+                time.sleep(5)
+                continue
 
-        data_dict = group_by_sensor_type(messages)
+            data_dict = group_by_sensor_type(messages)
 
-        for sensor_type, batch in data_dict.items():
-            try:
-                process_sensor_type_batch(sensor_type, batch, spark_session, sqs, sqs_url)
-            except Exception as e:
-                logger.error(f"Batch insert or delete failed for {sensor_type}: {e}")
+            futures = {
+                executor.submit(process_sensor_type_batch, sensor_type, batch, spark_session, sqs, sqs_url): sensor_type
+                for sensor_type, batch in data_dict.items()
+            }
+
+            for future in as_completed(futures):
+                sensor_type = futures[future]
+                try:
+                    future.result()
+                except Exception as e:
+                    logger.error(f"Batch insert or delete failed for {sensor_type}: {e}")
 
 if __name__ == "__main__":
     try:
