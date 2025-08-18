@@ -12,6 +12,9 @@ class SensorType(str, Enum):
     IAQ = "iaq"
     HEAT = "heat"
     GAS = "gas"
+    ENERGY = "energy"
+    RENEWABLE = "renewable"
+    UNDEFINED = "undefined"
     TEST = "test"
 
 class GemsData(BaseModel):
@@ -63,12 +66,21 @@ class GasData(BaseModel):
     temp: Optional[float]
     recorded_at: str
 
+class SingleValueData(BaseModel):
+    building_id: str
+    measurement_point_id: str
+    value: Optional[float]
+    recorded_at: str
+
 load_dotenv()
 SENSOR_TABLE_MAPPING = {
     "gems": os.getenv("ICEBERG_TABLE_GEMS"),
     "iaq": os.getenv("ICEBERG_TABLE_IAQ"),
     "heat": os.getenv("ICEBERG_TABLE_HEAT"),
     "gas": os.getenv("ICEBERG_TABLE_GAS"),
+    "energy": os.getenv("ICEBERG_TABLE_ENERGY"),
+    "renewable": os.getenv("ICEBERG_TABLE_RENEWABLE"),
+    "undefined": os.getenv("ICEBERG_TABLE_UNDEFINED"),
     "test": os.getenv("ICEBERG_TABLE_TEST"),
 }
 
@@ -107,14 +119,6 @@ def get_schema(sensor_type):
             StructField("recorded_at", StringType(), False),
         ])
 
-    if sensor_type == SensorType.IAQ:
-        return StructType([
-            StructField("building_id", StringType(), False),
-            StructField("measurement_point_id", StringType(), False),
-            StructField("value", DoubleType(), True),
-            StructField("recorded_at", StringType(), False),
-        ])
-
     if sensor_type == SensorType.HEAT:
         return StructType([
             StructField("building_id", StringType(), False),
@@ -139,7 +143,7 @@ def get_schema(sensor_type):
             StructField("recorded_at", StringType(), False),
         ])
 
-    if sensor_type == SensorType.TEST:
+    if sensor_type == SensorType.IAQ or sensor_type == SensorType.ENERGY or sensor_type == SensorType.RENEWABLE or sensor_type == SensorType.UNDEFINED or sensor_type == SensorType.TEST:
         return StructType([
             StructField("building_id", StringType(), False),
             StructField("measurement_point_id", StringType(), False),
